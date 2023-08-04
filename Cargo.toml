@@ -17,15 +17,9 @@ serde = { version = "1.0.152", features = ["derive"] }
 uuid = { version = "1.4.1", features = ["serde", "v4"] }
 chrono = { version = "0.4.26", features = ["serde"] }
 rocket_sync_db_pools = {version = "0.1.0-rc.3",features = ["diesel_postgres_pool"]}
+llama_cpp_rs = "0.1.2"
+# llama_cpp_rs = { path = "../rust_llama_cpp" }
 
 [dependencies.rocket]
 version = "=0.5.0-rc.3"
 features = ["json", "uuid"]
-
-# [dependencies.rocket_dyn_templates]
-# features = ["handlebars"]
-
-# [dependencies.rocket_contrib]
-# version = "0.4.4"
-# default-features = false
-# features = ["json"]
