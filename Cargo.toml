@@ -16,8 +16,12 @@ dotenvy = "0.15"
 serde = { version = "1.0.152", features = ["derive"] }
 uuid = { version = "1.4.1", features = ["serde", "v4"] }
 chrono = { version = "0.4.26", features = ["serde"] }
-rocket_sync_db_pools = {version = "0.1.0-rc.3",features = ["diesel_postgres_pool"]}
+rocket_sync_db_pools = { version = "0.1.0-rc.3", features = [
+    "diesel_postgres_pool",
+] }
 llama_cpp_rs = "0.1.2"
+reqwest = { version = "0.11.18", features = ["json","gzip","brotli"] }
+visdom = "0.5.10"
 # llama_cpp_rs = { path = "../rust_llama_cpp" }
 
 [dependencies.rocket]
