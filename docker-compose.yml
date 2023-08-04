@@ -1,0 +1,31 @@
+version: '3'
+services:
+  db:
+    image: postgres
+    restart: always
+    environment:
+      POSTGRES_PASSWORD: admin123
+      POSTGRES_DB: llama_chat
+    volumes:
+      - ./data:/var/lib/postgresql/data
+    ports:
+      - 5432:5432
+  web:
+    image: llama_internet_chatbot_service
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    volumes:
+      - .:/app
+    depends_on:
+      - db
+      - rank_service
+  rank_service:
+    image: rank_service
+    build:
+      context: ./rank_service
+      dockerfile: Dockerfile
+    ports:
+      - "8081:8081"
