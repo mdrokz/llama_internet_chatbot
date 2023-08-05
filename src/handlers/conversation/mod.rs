@@ -248,7 +248,7 @@ pub async fn inference_internet(conn: DbConn, id: uuid::Uuid) -> EventStream![] 
             };
             spawn_blocking(move || {
                 let llama =
-                    LLama::new("./wizard-vicuna-13B.ggmlv3.q4_0.bin".into(), &model_options)
+                    LLama::new("./models/wizard-vicuna-13B.ggmlv3.q4_0.bin".into(), &model_options)
                         .expect("failed to create model");
                 // let r = "### ### Human: Hello, ### Assistant.\n### ### Assistant: Hello. How may I help you today?\n### ### Human: Please tell me the largest city in Europe.\n### ### Assistant: Sure. The largest city in Europe is Moscow, the capital of Russia.\n### ### Human: whats the first question i asked ?";
                 let prompt = messages
@@ -330,7 +330,7 @@ pub async fn inference(conn: DbConn, id: uuid::Uuid) -> EventStream![] {
             ..Default::default()
         };
         spawn_blocking(move || {
-            let llama = LLama::new("./wizard-vicuna-13B.ggmlv3.q4_0.bin".into(), &model_options)
+            let llama = LLama::new("./models/wizard-vicuna-13B.ggmlv3.q4_0.bin".into(), &model_options)
                 .expect("failed to create model");
             // let r = "### ### Human: Hello, ### Assistant.\n### ### Assistant: Hello. How may I help you today?\n### ### Human: Please tell me the largest city in Europe.\n### ### Assistant: Sure. The largest city in Europe is Moscow, the capital of Russia.\n### ### Human: whats the first question i asked ?";
             let prompt = messages

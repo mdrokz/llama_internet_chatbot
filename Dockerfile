@@ -18,7 +18,7 @@ COPY . /app
 RUN cargo build --release
 
 
-FROM debian:buster-slim
+FROM debian:bullseye-slim
 
 WORKDIR /app
 
@@ -36,7 +36,7 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-EXPOSE 8080
+EXPOSE 8000
 
 CMD ./diesel migration run && ./llama_internet_chatbot
 

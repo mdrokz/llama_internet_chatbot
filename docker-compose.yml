@@ -13,13 +13,15 @@ services:
       - 5433:5432
   web:
     image: llama_internet_chatbot_service
+    environment:
+      - ROCKET_ADDRESS=0.0.0.0
     build: 
       context: .
       dockerfile: Dockerfile
     ports:
-      - "8080:8080"
+      - 8000:8000
     volumes:
-      - .:/app
+      - ./models:/app/models
     depends_on:
       - db
       - rank_service
@@ -29,4 +31,4 @@ services:
       context: ./rank_service
       dockerfile: Dockerfile
     ports:
-      - "8081:8081"
+      - 8081:8081
