@@ -1,4 +1,5 @@
 version: '3'
+
 services:
   db:
     image: postgres
@@ -11,6 +12,7 @@ services:
       - ./data:/var/lib/postgresql/data
     ports:
       - 5433:5432
+
   web:
     image: llama_internet_chatbot_service
     environment:
@@ -22,9 +24,11 @@ services:
       - 8000:8000
     volumes:
       - ./models:/app/models
+      - logs:/app/logs
     depends_on:
       - db
       - rank_service
+
   rank_service:
     image: rank_service
     build:
@@ -32,3 +36,38 @@ services:
       dockerfile: Dockerfile
     ports:
       - 8081:8081
+
+  loki:
+    image: grafana/loki:1.4.1
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./loki-config.yaml:/etc/loki/local-config.yaml
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - logging
+
+  promtail:
+    image: grafana/promtail:1.4.1
+    volumes:
+      - ./promtail-config.yml:/etc/promtail/docker-config.yml
+      - logs:/var/log
+    command: -config.file=/etc/promtail/docker-config.yml
+    networks:
+      - logging
+
+  grafana:
+    image: grafana/grafana:master
+    volumes:
+      - grafana-storage:/var/lib/grafana
+    ports:
+      - "3001:3000"
+    networks:
+      - logging
+
+volumes:
+  logs:
+  grafana-storage:
+
+networks:
+  logging:
