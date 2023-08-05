@@ -50,6 +50,20 @@ pub async fn create_conversation(
 
     use crate::models::Conversation;
 
+    let initial_message_h = Conversation {
+        role: "Human".into(),
+        chat_id: conversation.chat_id.clone(),
+        message: "Hello, [[Assistant]].".into(),
+        ..Default::default()
+    };
+
+    let initial_message_a = Conversation {
+        role: "Assistant".into(),
+        chat_id: conversation.chat_id.clone(),
+        message: "ello. How may I help you today?".into(),
+        ..Default::default()
+    };
+
     let new_conversation = Conversation {
         role: conversation.role.clone(),
         chat_id: conversation.chat_id.clone(),
@@ -59,13 +73,33 @@ pub async fn create_conversation(
 
     conn.run(move |c| {
         diesel::insert_into(conversations)
-            .values(&new_conversation)
+            .values(vec![
+                initial_message_h,
+                initial_message_a,
+                new_conversation,
+            ])
             .execute(c)
             .expect("Error saving new post")
     })
     .await;
 
     Ok(Created::new("/").body(conversation))
+}
+
+#[get("/", format = "json")]
+pub async fn list_conversations(conn: DbConn) -> Result<Json<Vec<Conversation>>> {
+    use crate::schema::conversations::dsl::*;
+
+    let conversations_list = conn
+        .run(|c| {
+            conversations
+                .limit(100)
+                .load::<Conversation>(c)
+                .expect("Error loading conversations")
+        })
+        .await;
+
+    Ok(Json(conversations_list))
 }
 
 #[get("/inference_internet/<id>")]
@@ -223,7 +257,7 @@ pub async fn inference_internet(conn: DbConn, id: uuid::Uuid) -> EventStream![] 
                     .collect::<Vec<String>>()
                     .join("\n");
 
-                println!("{}",prompt);
+                println!("{}", prompt);
 
                 llama
                     .predict(prompt, predict_options)

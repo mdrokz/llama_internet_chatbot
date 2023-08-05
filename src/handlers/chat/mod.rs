@@ -1,16 +1,12 @@
-use crate::{models::Chat, DbConn};
+use crate::{models::Chat, schema::chats::updated_at, DbConn};
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
-use rocket::{
-    response::{status::Created},
-    serde::json::Json,
-};
+use rocket::{response::status::Created, serde::json::Json};
 
 use self::db::{NewChat, UpdateChat};
 
 use super::Result;
 
 mod db;
-
 
 #[post("/create", format = "json", data = "<chat>")]
 pub async fn create_chat(conn: DbConn, chat: Json<NewChat>) -> Result<Created<Json<NewChat>>> {
