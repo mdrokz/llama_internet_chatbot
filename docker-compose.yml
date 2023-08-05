@@ -4,12 +4,13 @@ services:
     image: postgres
     restart: always
     environment:
+      POSTGRES_USER: postgres
       POSTGRES_PASSWORD: admin123
       POSTGRES_DB: llama_chat
     volumes:
       - ./data:/var/lib/postgresql/data
     ports:
-      - 5432:5432
+      - 5433:5432
   web:
     image: llama_internet_chatbot_service
     build: 
