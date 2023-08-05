@@ -11,11 +11,8 @@ use rocket::{
     serde::json::Json,
 };
 
-// use rocket::tokio::sync::mpsc::{channel};
 use rocket::tokio::task::spawn_blocking;
 use visdom::Vis;
-
-// use std::thread::spawn;
 
 use std::sync::mpsc::channel;
 
@@ -24,13 +21,15 @@ use llama_cpp_rs::{
     LLama,
 };
 
-use crate::{models::Conversation, schema::conversations::chat_id, DbConn};
+use crate::{log_error, models::Conversation, schema::conversations::chat_id, DbConn};
+
+use super::RocketError;
 
 use self::db::NewConversation;
 
 pub mod db;
 
-use super::Result;
+use super::{Result, RtResult};
 
 const UA: &'static str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/62.0.3202.94 Safari/537.36";
 
@@ -49,6 +48,8 @@ pub async fn create_conversation(
     use crate::schema::conversations::dsl::*;
 
     use crate::models::Conversation;
+
+    info!("Creating conversation: {:?}", conversation);
 
     let initial_message_h = Conversation {
         role: "Human".into(),
@@ -72,16 +73,14 @@ pub async fn create_conversation(
     };
 
     conn.run(move |c| {
-        diesel::insert_into(conversations)
-            .values(vec![
-                initial_message_h,
-                initial_message_a,
-                new_conversation,
-            ])
-            .execute(c)
-            .expect("Error saving new post")
+        let v = diesel::insert_into(conversations)
+            .values(vec![initial_message_h, initial_message_a, new_conversation])
+            .execute(c);
+        log_error!(v, "Error saving to database").unwrap()
     })
     .await;
+
+    info!("Saved to database: {:?}", conversation);
 
     Ok(Created::new("/").body(conversation))
 }
@@ -90,20 +89,23 @@ pub async fn create_conversation(
 pub async fn list_conversations(conn: DbConn) -> Result<Json<Vec<Conversation>>> {
     use crate::schema::conversations::dsl::*;
 
+    info!("API call: list_conversations");
+
     let conversations_list = conn
         .run(|c| {
-            conversations
-                .limit(100)
-                .load::<Conversation>(c)
-                .expect("Error loading conversations")
+            let v = conversations.limit(100).load::<Conversation>(c);
+
+            log_error!(v, "Error loading conversations").unwrap()
         })
         .await;
+
+    info!("Found conversations: {:?}", conversations_list);
 
     Ok(Json(conversations_list))
 }
 
 #[get("/inference_internet/<id>")]
-pub async fn inference_internet(conn: DbConn, id: uuid::Uuid) -> EventStream![] {
+pub async fn inference_internet(conn: DbConn, id: uuid::Uuid) -> RtResult<EventStream![]> {
     use crate::schema::conversations::dsl::conversations;
 
     let mut headers = HeaderMap::new();
@@ -116,42 +118,51 @@ pub async fn inference_internet(conn: DbConn, id: uuid::Uuid) -> EventStream![] 
 
     headers.append(ACCEPT_LANGUAGE, ACCEPT_LANGUAGE_VALUE.parse().unwrap());
 
-    let client = reqwest::Client::builder()
+    info!("API call: inference_internet({})", id);
+
+    let client_r = reqwest::Client::builder()
         .redirect(Policy::default())
         .default_headers(headers)
-        .build()
-        .expect("failed to build client");
+        .build();
+
+    let client = log_error!(client_r, "Error building reqwest client", 500)?;
 
     let (tx, rx) = channel::<String>();
 
+    info!("Fetching messages from database with id {}", id);
+
     let mut messages = conn
         .run(move |c| {
-            conversations
+            let v = conversations
                 .filter(chat_id.eq(id))
                 .limit(100)
-                .load::<crate::models::Conversation>(c)
-                .expect("Error loading conversations")
+                .load::<crate::models::Conversation>(c);
+
+            log_error!(v, "Error loading conversations").unwrap()
         })
         .await;
 
     if messages.len() == 0 {
-        let _ = tx.send("CANCEL".into());
+        let v = tx.send("CANCEL".into());
+
+        log_error!(v, "Error sending CANCEL message from channel", 500)?;
     }
 
     let query = messages.last().unwrap().message.clone();
 
+    info!("Searching duckduckgo with query {}", query);
+
     if messages.len() > 0 {
-        let res = client
+        let res_r = client
             .get(format!("https://duckduckgo.com/html/?q={}", &query))
             .send()
-            .await
-            .expect("failed to send duckduckgo request");
+            .await;
 
-        // println!("{:?}", res);
+        let res = log_error!(res_r, "Error sending duckduckgo request", 500)?;
 
-        let body = res.text().await.expect("failed to extract body");
+        let body = log_error!(res.text().await, "Error extracting body", 500)?;
 
-        println!("{:?}", body);
+        info!("duckduckgo response: {}", body);
 
         let links = {
             let root = Vis::load(body).unwrap();
@@ -164,21 +175,26 @@ pub async fn inference_internet(conn: DbConn, id: uuid::Uuid) -> EventStream![] 
             }) // Collect the links into a Vec
         };
 
+        info!("Found links: {:?}", links);
+
         let mut docs = vec![];
 
         if links.len() == 0 {
-            let _ = tx.send("CANCEL".into());
+            let v = tx.send("CANCEL".into());
+            log_error!(v, "Error sending CANCEL message from channel", 500)?;
         } else {
             for link in links {
-                println!("{}", link);
+                info!("Fetching link {}", link);
 
-                let r = client
-                    .get(link)
-                    .send()
-                    .await
-                    .expect("failed to send request");
+                let res_r = client.get(&link).send().await;
 
-                let body = r.text().await.expect("failed to extract body");
+                let res = log_error!(
+                    res_r,
+                    format!("Error sending request to link {}", link),
+                    500
+                )?;
+
+                let body = log_error!(res.text().await, "Error extracting body", 500)?;
 
                 let (p, b, s) = {
                     let root = Vis::load(body).unwrap();
@@ -194,6 +210,8 @@ pub async fn inference_internet(conn: DbConn, id: uuid::Uuid) -> EventStream![] 
 
                 // combine p b s
                 let text = format!("{}\n\n {}\n\n {}\n\n", p, b, s);
+
+                info!("Found text: {}", text);
 
                 docs.push(text);
             }
@@ -247,9 +265,11 @@ pub async fn inference_internet(conn: DbConn, id: uuid::Uuid) -> EventStream![] 
                 ..Default::default()
             };
             spawn_blocking(move || {
-                let llama =
-                    LLama::new("./models/wizard-vicuna-13B.ggmlv3.q4_0.bin".into(), &model_options)
-                        .expect("failed to create model");
+                let llama = LLama::new(
+                    "./models/wizard-vicuna-13B.ggmlv3.q4_0.bin".into(),
+                    &model_options,
+                )
+                .expect("failed to create model");
                 // let r = "### ### Human: Hello, ### Assistant.\n### ### Assistant: Hello. How may I help you today?\n### ### Human: Please tell me the largest city in Europe.\n### ### Assistant: Sure. The largest city in Europe is Moscow, the capital of Russia.\n### ### Human: whats the first question i asked ?";
                 let prompt = messages
                     .iter()
@@ -266,7 +286,7 @@ pub async fn inference_internet(conn: DbConn, id: uuid::Uuid) -> EventStream![] 
         }
     }
 
-    EventStream! {
+    Ok(EventStream! {
         loop {
             let token = rx.recv();
             match token {
@@ -285,7 +305,7 @@ pub async fn inference_internet(conn: DbConn, id: uuid::Uuid) -> EventStream![] 
                 }
             }
         }
-    }
+    })
 }
 
 #[get("/inference/<id>")]
@@ -330,8 +350,11 @@ pub async fn inference(conn: DbConn, id: uuid::Uuid) -> EventStream![] {
             ..Default::default()
         };
         spawn_blocking(move || {
-            let llama = LLama::new("./models/wizard-vicuna-13B.ggmlv3.q4_0.bin".into(), &model_options)
-                .expect("failed to create model");
+            let llama = LLama::new(
+                "./models/wizard-vicuna-13B.ggmlv3.q4_0.bin".into(),
+                &model_options,
+            )
+            .expect("failed to create model");
             // let r = "### ### Human: Hello, ### Assistant.\n### ### Assistant: Hello. How may I help you today?\n### ### Human: Please tell me the largest city in Europe.\n### ### Assistant: Sure. The largest city in Europe is Moscow, the capital of Russia.\n### ### Human: whats the first question i asked ?";
             let prompt = messages
                 .iter()
